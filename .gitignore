@@ -9,3 +9,8 @@ typechain-types
 cache
 artifacts
 
+.vscode
+bin
+
+.gitattributes
+
