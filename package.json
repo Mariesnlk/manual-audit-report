@@ -1,0 +1,29 @@
+{
+  "scripts": {
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "coverage": "npx hardhat coverage",
+    "lint": "solhint contracts/**/*.sol -f table",
+    "prettier": "npx prettier --write contracts/**/*.sol",
+    "lint:test": "npx eslint test/**/*.js",
+    "deploy": "npx hardhat run scripts/deploy.ts",
+    "size": "npx hardhat size-contracts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^1.0.2",
+    "hardhat": "^2.10.2",
+    "prettier": "^2.7.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.24",
+    "solhint": "^3.3.7",
+    "solhint-plugin-prettier": "^0.0.5"
+  },
+  "dependencies": {
+    "@nomiclabs/hardhat-solhint": "^2.0.1",
+    "eslint": "^8.14.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-import": "^2.26.0",
+    "hardhat-gas-reporter": "^1.0.8",
+    "solc": "^0.8.16"
+  }
+}
