@@ -1,5 +1,15 @@
 
 # Manual Report
+## Unresolved, High: Shadowing State Variable
+In *UnidoDistribution* smart contract in *_approve(...)* function with input parameter owner that shadows Ownable.owner variable.
+
+**Recommendation:** Rename input parameter in  _approve(...) function.
+
+## Unresolved, High: Partial using of SafeMath
+In *UnidoDistribution* smart contract SafeMath library is unused for increment and decrement operations.
+
+**Recommendation:** Add SafeMath to increment and decrement operations.
+
 ## Unresolved, High: Event invocations have to be prefixed by "emit"
 In *UnidoDistribution* smart contract all events used without prefix emit.
 
@@ -46,6 +56,15 @@ In *UnidoDistribution* smart contract is used `mapping(POOL => uint256) public p
 instead of Enum as key type in the mapping can be used *uint8* 
 `mapping(uint8 => uint256) public pools`
 
+There could be used array:
+**PoolInfo[7] public pools;**
+
+# Unresolved, Low: Spendable functionality is unused
+In *UnidoDistribution* smart contract uses a *spendable()* function but in the requirements *require(balances[msg.sender].sub(lockoutBalances[msg.sender]) >= tokens, "Must have enough spendable tokens");*
+it is not used.
+
+**Recommendation:** Change requirements to use *require(_spendable(spender) >= amount, "Must have enough spendable tokens");*
+
 # Unresolved, Low: Useless function
 In *UnidoDistribution* smart contract is used function *_isTradeable() internal view returns (bool)* that calls only once in the function *isTradeable()*.
 
@@ -81,15 +100,162 @@ Declare  *_approve* - internal.
 
 **Recommendation:**  reorder requires. First should be checked incoming parameters, then all necessary checks.
 
+# Unresolved, Low: Setting value to zero instead of deleting it
+The delete expression from storage definitely saves gas.
+
+**Recommendation:** Consider changing the reset way.
+
+# Unresolved, Low: Update release function code decreasing
+
+**Recommendation:** Consider changing function code to:
+```
+    function updateRelease() external onlyOwner returns (bool) {
+        uint256 len = participants.length;
+        uint256 continueAddScan = _continuePoint.add(_scanLength);
+        for (uint256 i = _continuePoint; i < len && i < continueAddScan; i++) {
+            address p = participants[i];
+            UserInfo storage data = participantsData[p];
+            if (data.lockoutPeriod > 0) data.lockoutPeriod.sub(1);
+            else if (data.lockoutReleaseRate > 0) {
+                // First release of reserve is 12.5%
+                data.lockoutBalance = data.lockoutBalance.sub(
+                    data.lockoutReleaseRate == 18
+                        ? data.lockoutBalance.div(8)
+                        : data.lockoutBalance.div(data.lockoutReleaseRate)
+                );
+                data.lockoutReleaseRate.sub(1);
+            } else _deletions.push(i);
+        }
+        _continuePoint = _continuePoint.add(_scanLength);
+        if (_continuePoint >= len) {
+            delete _continuePoint;
+            while (_deletions.length > 0) {
+                uint256 index = _deletions[_deletions.length.sub(1)];
+                _deletions.pop();
+
+                participants[index] = participants[participants.length.sub(1)];
+                participants.pop();
+            }
+            return false;
+        }
+
+        return true;
+    }
+```
+
 # Unresolved, Low: Absence of require checking
 *UnidoDistribution* has function *_approve()* and *addParticipants()* requirements to check incoming parameters to avoid unpdedicted transaction revert.
 
 **Recommendation:**  add require for all incoming parameters.
 
-# Unresolved, Low: Cyclomatic complexity
-*UnidoDistribution* function *addParticipants()* has cyclomatic complexity 9, but allowed no more than 7.
+# Unresolved, Low: Balance & allowance functionality optimization
+Private mappings and their getters could be rewritten from
+```
+mapping(address => uint256) private balances;
+mapping(address => mapping(address => uint256)) private allowances;
 
-**Recommendation:** rewrite if-else condition to increase cyclomatic complexity.
+function balanceOf(address tokenOwner) public view returns (uint256) {
+   return balances[tokenOwner];
+}
+
+function allowance(address tokenOwner, address spender) public view returns (uint256) {
+   return allowances[tokenOwner][spender];
+}
+```
+to only:
+```
+mapping(address => uint256) public balanceOf;
+mapping(address => mapping(address => uint256)) public allowance;
+```
+
+**Recommendation:** Consider optimization.
+
+# Unresolved, Low: Transfer optimization
+Transfer functionality could be rewritten to such way:
+```
+   function transfer(address to, uint256 tokens) external returns (bool) {
+        return _transferFrom(msg.sender, to, tokens);
+   }
+ 
+    function transferFrom(
+        address from,
+        address to,
+        uint256 tokens
+    ) external returns (bool) {
+        return _transferFrom(from, to, tokens);
+    }
+    function _transferFrom(
+        address from,
+        address to,
+        uint256 tokens
+    ) internal notZeroAddress(from) notZeroAddress(to) notZero(tokens) onlySpendable(from, tokens) returns (bool) {
+        require(isTradeable, "Contract is not trading yet");
+        require(allowance[from][msg.sender] >= tokens, "Must be approved to spend that much");
+ 
+        balanceOf[from] = balanceOf[from].sub(tokens);
+        balanceOf[to] = balanceOf[to].add(tokens);
+        allowance[from][msg.sender] = allowance[from][msg.sender].sub(tokens);
+ 
+        emit Transfer(from, to, tokens);
+ 
+        return true;
+```
+
+# Unresolved, Low: Cyclomatic complexity
+*UnidoDistribution* function *addParticipants()* has cyclomatic complexity 9, but allowed no more than 7. 
+Instead of if-else condition in  *addParticipants()* function to optimize contract code could be added 
+```
+    struct PoolInfo {
+        uint256 totalSupply;
+        uint256 lockoutPeriod;
+        uint256 lockoutReleaseRate;
+    }
+And constructor will have following body:
+    constructor() {
+        // SEED Setup
+        pools[0].totalSupply = 15e24;
+        pools[0].lockoutPeriod = 1;
+        pools[0].lockoutReleaseRate = 5;
+
+        // PRIVATE Setup
+        pools[1].totalSupply = 14e24;
+        pools[1].lockoutReleaseRate = 4;
+
+        // TEAM Setup
+        pools[2].totalSupply = 184e23;
+        pools[2].lockoutPeriod = 12;
+        pools[2].lockoutReleaseRate = 12;
+
+        // ADVISOR Setup
+        pools[3].totalSupply = 1035e22;
+        pools[3].lockoutPeriod = 6;
+        pools[3].lockoutReleaseRate = 6;
+
+        // ECOSYSTEM Setup
+        pools[4].totalSupply = 14375e21;
+        pools[4].lockoutPeriod = 3;
+        pools[4].lockoutReleaseRate = 9;
+
+        // LIQUIDITY Setup
+        pools[5].totalSupply = 43125e20;
+        pools[5].lockoutPeriod = 1;
+        pools[5].lockoutReleaseRate = 1;
+
+        // RESERVE Setup
+        pools[6].totalSupply = 3225e22;
+        pools[6].lockoutReleaseRate = 18;
+
+        totalSupply = 115e24;
+
+        // Give POLS private sale directly
+        balanceOf[0xeFF02cB28A05EebF76cB6aF993984731df8479b1] = 2e24;
+
+        // Give LIQUIDITY pool their half directly
+        balanceOf[0xd6221a4f8880e9Aa355079F039a6012555556974] = 43125e20;
+    }
+```
+
+**Recommendation:** rewrite if-else condition to increase cyclomatic complexity. Consider optimization.
 
 # Unresolved, Low: Untriggered require
 *UnidoDistribution* function *addParticipants()* has require checking that checks if the passed parameter is in the range of values of enum *Pool*. But blockchain will always reverted transaction with nonexistent enum value.
@@ -100,6 +266,38 @@ Declare  *_approve* - internal.
 Error message for require can be not more than 120 chars length.
 
 **Recommendation:**  reduce size of the error message in requires.
+
+# Unresolved, Low: Not valid requirements
+There are few checkings that always return true value:
+in *_approve() function:* 
+```require(owner_ != address(0), "Cannot approve from the 0 address");```
+in *transferFrom() function:* ```require(from != address(0), "Cannot send from the 0 address");```
+in *addParticipants() function:* ```require(pool >= POOL.SEED && pool <= POOL.RESERVE, "Must select a valid pool");```
+
+**Recommendation:** Remove previous requirements.
+
+# Unresolved, Low: Absent of modifier
+In *UnidoDistribution* smart contract there are few identical requirements that could be added to modifiers before constructor.
+For example:
+```
+    modifier notZeroAddress(address participant) {
+        require(participant != address(0), "Error: Zero address");
+        _;
+    }
+
+    modifier notZero(uint256 amount) {
+        require(amount > 0, "Error: Zero amount");
+        _;
+    }
+
+    modifier onlySpendable(address spender, uint256 amount) {
+        require(_spendable(spender) >= amount, "Must have enough spendable tokens");
+        _;
+    }
+```
+
+**Recommendation:** consider decreasing contract code.
+
 
 # Unresolved, Low: Abcent events for token transfering
 In *UnidoDistribution* smart contract function *addParticipants()* is missed event Transfer to track changings in balances of the participants after adding them to the list.
@@ -116,10 +314,13 @@ In *UnidoDistribution* smart contract 3 mapping has the same key - address of th
 
 **Recommendation:**  to avoid “stack to deep” in the future reorganize 3 mapping lockoutPeriods, lockoutBalances, lockoutReleaseRates to one struct with the next fields:
 ```
-    address participant;
-    uint256 lockoutPeriod;
-    uint256 lockoutBalance;
-    uint256 lockoutReleaseRate;
+There could be created 
+    struct UserInfo {
+        uint256 lockoutPeriod;
+        uint256 lockoutBalance;
+        uint256 lockoutReleaseRate;
+    }
+for mapping(address => UserInfo) public participantsData;
 ```
 
 # Unresolved, Informational: Incorrect layout
@@ -190,5 +391,16 @@ The *unido-1* smart contract is not covered with NatSpec.
 In *UnidoDistribution*  smart contract rename some functions and variables naming to clear the meaning (e.g. *addParticipants* function do not saved only participants addresses butalso stakes)
 
 **Recommendation:**  rename functions whose names do not correspond to their functionality and rename variables with one letter or short form.
+
+# Unresolved, Informational: Naming style
+In *UnidoDistribution* smart contract private variables names should start with *_(private visibility):*
+```
+    uint256 private _scanLength = 150;
+    uint256 private _continuePoint;
+    uint256[] private _deletions;
+```
+
+**Recommendation:** Consider naming style.
+
 
  
